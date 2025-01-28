@@ -1,0 +1,69 @@
+
+post-auth {
+
+    # If local wifi, add vlan
+    if (request:Client-Shortname == "$ENV{CLIENT_NAME}") {
+        update reply {
+            Tunnel-Type := VLAN
+            Tunnel-Medium-Type := IEEE-802
+        }
+        # if user came from eduroam, set vlan to guest (unless they are esu2.org)
+        if (&control:Proxy-To-Realm) {
+            if ( "%{User-Name}" =~ /esu2\.org$/ ){
+                update reply {
+                Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
+                }
+            }
+            else {
+                update reply {
+                Tunnel-Private-Group-ID := $ENV{GUEST_VLAN}
+                }
+            }
+        }
+        else {
+            if ("$ENV{LDAP_ENABLE}" == "TRUE") {
+                if (&control:LDAP-UserDN =~ /OU=SysOps/ || &control:LDAP-UserDN =~ /OU=Staff/ ) {
+                    update reply {
+                    Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
+                    }
+                }
+                else {
+                    update reply {
+                    Tunnel-Private-Group-ID := $ENV{STUDENT_VLAN}
+                    }
+                }
+            }
+            else {
+                update reply {
+                    Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
+                }
+            }
+        }
+    }
+
+
+    # keep below    
+
+    #if (session-state:User-Name && reply:User-Name && request:User-Name && (reply:User-Name == request:User-Name)) {
+    #    update reply {
+    #        &User-Name !* ANY
+    #    }
+    #}
+    #update {
+    #    &reply: += &session-state:
+    #}
+    #
+    #remove_reply_message_if_eap
+    #linelog
+    #Post-Auth-Type REJECT {
+    #    attr_filter.access_reject
+    #    eap
+    #    remove_reply_message_if_eap
+    #    linelog
+    #}
+    #Post-Auth-Type Challenge {
+    #    linelog
+    #}
+
+
+}

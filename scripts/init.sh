@@ -6,23 +6,16 @@ set -e
 
 echo "$@"
 
-echo --------------------------------------------------
-echo "Checking / Setting ENV vars"
-echo --------------------------------------------------
+# func to print header
+print_header() {
+    echo "--------------------------------------------------"
+    echo "$1"
+    echo "--------------------------------------------------"
+}
 
-# Check for required AD Params
-[ -z "$AD_DOMAIN" ] && echo "AD_DOMAIN env variable not defined! Exiting..." && exit 1
-[ -z "$AD_SERVER" ] && echo "AD_SERVER env variable not defined! Exiting..." && exit 1
-[ -z "$AD_WORKGROUP" ] && echo "AD_WORKGROUP env variable not defined! Exiting..." && exit 1
-[ -z "$AD_USERNAME" ] && echo "AD_USERNAME env variable not defined! Exiting..." && exit 1
-[ -z "$AD_PASSWORD" ] && echo "AD_PASSWORD env variable not defined! Exiting..." && exit 1
-export AD_HOSTNAME=$(hostname)
-
-echo --------------------------------------------------
-echo "Setting up Kerberos realm: \"${AD_DOMAIN^^}\""
-echo --------------------------------------------------
-
-cat > /etc/krb5.conf << EOL
+setup_kerberos_pam() {
+    print_header "Setting up Kerberos realm: \"${AD_DOMAIN^^}\""
+    cat > /etc/krb5.conf << EOL
 [logging]
     default = FILE:/var/log/krb5.log 
     kdc = FILE:/var/log/kdc.log 
@@ -52,90 +45,144 @@ cat > /etc/krb5.conf << EOL
     .${AD_DOMAIN,,} = ${AD_DOMAIN^^}
     ${AD_DOMAIN,,} = ${AD_DOMAIN^^}
 EOL
+    echo "auth            sufficient      pam_krb5.so minimum_uid=1000" > /etc/pam.d/radiusd 
+    echo "session         required        pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
+    echo "account         required        pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
+    echo "password        sufficient      pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
+}
 
-echo --------------------------------------------------
-echo "Setting up SMBD and NMBD"
-echo --------------------------------------------------
+# if ad_domain is set, then setup kerberos
+if [ "$AD_DOMAIN" ]; then
+    # Check for required AD Params
+    [ -z "$AD_SERVER" ] && echo "AD_SERVER env variable not defined! Exiting..." && exit 1
+    [ -z "$AD_WORKGROUP" ] && echo "AD_WORKGROUP env variable not defined! Exiting..." && exit 1
+    #[ -z "$AD_USERNAME" ] && echo "AD_USERNAME env variable not defined! Exiting..." && exit 1
+    #[ -z "$AD_PASSWORD" ] && echo "AD_PASSWORD env variable not defined! Exiting..." && exit 1
+    export AD_HOSTNAME=$(hostname)
 
-sed -i "s|AD_DOMAIN|${AD_DOMAIN^^}|g" /etc/samba/smb.conf
-sed -i "s|AD_WORKGROUP|${AD_WORKGROUP^^}|g" /etc/samba/smb.conf
-sed -i "s|AD_HOSTNAME|$AD_HOSTNAME|g" /etc/samba/smb.conf
-/etc/init.d/nmbd restart
-/etc/init.d/smbd restart
+    setup_kerberos_pam
+fi
 
-echo --------------------------------------------------
-echo 'Generating Kerberos ticket'
-echo --------------------------------------------------
+# client setup (optional)
+# loop through all env vars starting with RAD_CLIENT_
+for var in "${!RAD_CLIENT_@}"; do
+    declare -n ref=$var
+    
+    # only if var does not contain ADDR or SECRET, and ref is not empty
+    if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
+        print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
+        declare -n ref_ADDR=${var}_ADDR
+        declare -n ref_SECRET=${var}_SECRET
 
-echo $AD_PASSWORD | kinit -V $AD_USERNAME
+        echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
+        echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
+        echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
+        echo "}" >> /etc/freeradius/clients.conf
+    fi
+done
 
-#echo --------------------------------------------------
-#echo 'Joining Active Directory'
-#echo --------------------------------------------------
+# eduroam client setup
+for var in "${!EDUROAM_CLIENT_@}"; do
+    declare -n ref=$var
+    
+    # only if var does not contain ADDR or SECRET, and ref is not empty
+    if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
+        print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
+        declare -n ref_ADDR=${var}_ADDR
+        declare -n ref_SECRET=${var}_SECRET
 
-#net ads join -U "$AD_USERNAME"%"$AD_PASSWORD"
-#/etc/init.d/winbind restart
+        echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
+        echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
+        echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
+        echo "}" >> /etc/freeradius/clients.conf
+    fi
+done
 
-echo --------------------------------------------------
-echo 'Configuring FreeRADIUS: clients.conf'
-echo --------------------------------------------------
+if [ "${SETUP_PROXY}" == "1" ]; then
+    print_header "Setup FreeRADIUS: proxy.conf"
 
-[ "$FR_CLIENT_NAME" ] && sed -i "s|user_defined_client|$FR_CLIENT_NAME|g" /etc/freeradius/clients.conf
-[ "$FR_ACCESS_ALLOWED_CIDR" ] && sed -i "s|ACCESS_ALLOWED_CIDR|$FR_ACCESS_ALLOWED_CIDR|g" /etc/freeradius/clients.conf
-[ "$FR_SHARED_SECRET" ] && sed -i "s|SHARED_SECRET|$FR_SHARED_SECRET|g" /etc/freeradius/clients.conf
+    [ -z "$DOMAIN" ] && echo "DOMAIN env variable not defined! Exiting..." && exit 1
+    [ -z "$EDUROAM_FLR1_IPADDR" ] && echo "EDUROAM_FLR1_IPADDR env variable not defined! Exiting..." && exit 1
+    [ -z "$EDUROAM_FLR1_SECRET" ] && echo "EDUROAM_FLR1_SECRET env variable not defined! Exiting..." && exit 1
+    [ -z "$EDUROAM_FLR2_IPADDR" ] && echo "EDUROAM_FLR2_IPADDR env variable not defined! Exiting..." && exit 1
+    [ -z "$EDUROAM_FLR2_SECRET" ] && echo "EDUROAM_FLR2_SECRET env variable not defined! Exiting..." && exit 1
 
-if [ "${ENABLE_EDUROAM^^}" == "TRUE" ]; then
-    [ "$EDUROAM_CLIENT1_SERVER" ] && sed -i "s|EDUROAM_CLIENT1_SERVER|$EDUROAM_CLIENT1_SERVER|g" /etc/freeradius/clients.conf
-    [ "$EDUROAM_CLIENT1_SECRET" ] && sed -i "s|EDUROAM_CLIENT1_SECRET|$EDUROAM_CLIENT1_SECRET|g" /etc/freeradius/clients.conf
-    if [ "$EDUROAM_CLIENT2_SERVER" ]; then
-        LINESTART=$(grep -nr "client eduroam-tlrs2" /etc/freeradius/clients.conf | cut -d : -f1 )
-        if [ "$LINESTART" ]; then
-            LINEEND=$((LINESTART+3))
-            sed -i "${LINESTART},${LINEEND} s/# *//" /etc/freeradius/clients.conf
-            unset LINESTART
-            unset LINEEND
-        fi
-        sed -i "s|EDUROAM_CLIENT2_SERVER|$EDUROAM_CLIENT2_SERVER|g" /etc/freeradius/clients.conf
-        [ "$EDUROAM_CLIENT2_SECRET" ] && sed -i "s|EDUROAM_CLIENT2_SECRET|$EDUROAM_CLIENT2_SECRET|g" /etc/freeradius/clients.conf
+    cat > /etc/freeradius/proxy.conf << EOL
+proxy server {
+	default_fallback = no
+}
+
+## eduroam config
+home_server eduroam_flr_server_1 {
+	type = auth
+	ipaddr = $EDUROAM_FLR1_IPADDR
+	secret = $EDUROAM_FLR1_SECRET
+	port = 1812
+}
+
+home_server eduroam_flr_server_2 {
+	type = auth
+	ipaddr = $EDUROAM_FLR2_IPADDR
+	secret = $EDUROAM_FLR2_SECRET
+	port = 1812
+}
+
+home_server_pool EDUROAM {
+    type = fail-over
+    home_server = eduroam_flr_server_1
+
+	# Only uncomment if there are two FLRS
+	home_server = eduroam_flr_server_2
+}
+
+realm LOCAL {
+}
+
+realm ${DOMAIN,,} {
+  authhost = LOCAL
+  accthost = LOCAL
+}
+
+# null realm - allow here so we don't proxy inner tunnel
+realm NULL {
+  authhost = LOCAL
+  accthost = LOCAL
+}
+
+# setup eduroam as default realm
+realm DEFAULT {
+	auth_pool = EDUROAM
+	accthost = LOCAL
+	nostrip
+}
+EOL
+fi
+
+print_header 'Configuring FreeRADIUS: inner-tunnel'
+# we support 3 options, google ldap, ad ldap, and pam
+if [ "$AD_DOMAIN" ]; then
+    cp /templates/pam/inner-tunnel /etc/freeradius/sites-enabled/inner-tunnel
+elif [ "$LDAP_SERVER" == "ldaps://ldap.google.com:636/" ]; then
+    cp /templates/google-ldap/inner_tunnel /etc/freeradius/sites-enabled/inner-tunnel
+else
+    cp /templates/ad-ldap/inner_tunnel /etc/freeradius/sites-enabled/inner-tunnel
+fi
+
+# ldap may be needed for either AD or Google
+if [ "$LDAP_SERVER" ]; then
+    print_header "Configuring FreeRADIUS: LDAP"
+    
+    if [ "$LDAP_SERVER" == "ldaps://ldap.google.com:636/" ]; then
+        # use envsubst to replace variables in the template
+        envsubst '$LDAP_BASE_DN,$LDAP_BIND_DN,$LDAP_BIND_PW'  < /templates/google-ldap/ldap_google > /etc/freeradius/mods-enabled/ldap
+    else
+        envsubst '$LDAP_SERVER,$LDAP_BASE_DN,$LDAP_BIND_DN,$LDAP_BIND_PW,$LDAP_FILTER' < /templates/ad-ldap/ldap_ad > /etc/freeradius/mods-enabled/ldap
     fi
 fi
 
-echo --------------------------------------------------
-echo 'Configuring FreeRADIUS: proxy.conf'
-echo --------------------------------------------------
 
-[ "$FR_DOMAIN" ] && sed -i "s|REALM_DOMAIN_NAME|$FR_DOMAIN|g" /etc/freeradius/proxy.conf
+print_header 'Configuring FreeRADIUS: logfiles'
 
-## eduroam
-if [ "${ENABLE_EDUROAM^^}" == "TRUE" ]; then
-    echo "Enabling eduroam Config..."
-    LINESTART=$(grep -nr "realm DEFAULT {" /etc/freeradius/proxy.conf | cut -d : -f1 )
-    if [ "$LINESTART" ]; then
-        LINEEND=$((LINESTART+4))
-        sed -i "${LINESTART},${LINEEND} s/# *//" /etc/freeradius/proxy.conf
-        unset LINESTART
-        unset LINEEND
-    fi
-
-    [ "$EDUROAM_FLR1_IPADDR" ] && sed -i "s|EDUROAM_FLR1_IPADDR|$EDUROAM_FLR1_IPADDR|g" /etc/freeradius/proxy.conf
-    [ "$EDUROAM_FLR1_SECRET" ] && sed -i "s|EDUROAM_FLR1_SECRET|$EDUROAM_FLR1_SECRET|g" /etc/freeradius/proxy.conf
-    if [ "$EDUROAM_FLR2_IPADDR" ]; then
-        LINESTART=$(grep -nr "home_server eduroam_flr_server_2" /etc/freeradius/proxy.conf | cut -d : -f1 )
-        if [ "$LINESTART" ]; then
-            LINEEND=$((LINESTART+5))
-            sed -i "${LINESTART},${LINEEND} s/# *//" /etc/freeradius/proxy.conf
-            unset LINESTART
-            unset LINEEND
-        fi
-        sed -i '/eduroam_flr_server_2/s/^#//g' /etc/freeradius/proxy.conf
-        [ "$EDUROAM_FLR2_IPADDR" ] && sed -i "s|EDUROAM_FLR2_IPADDR|$EDUROAM_FLR2_IPADDR|g" /etc/freeradius/proxy.conf
-        [ "$EDUROAM_FLR2_SECRET" ] && sed -i "s|EDUROAM_FLR2_SECRET|$EDUROAM_FLR2_SECRET|g" /etc/freeradius/proxy.conf
-    fi
-fi
-
-echo --------------------------------------------------
-echo 'Configuring FreeRADIUS: logfiles'
-echo --------------------------------------------------
 # make sure linelogs exist with appropriate permissions
 touch /var/log/freeradius/linelog-access
 touch /var/log/freeradius/linelog-accounting
@@ -150,7 +197,7 @@ echo --------------------------------------------------
 
 # Handle the rest of the certificates
 # First the array of files which need 640 permissions
-FILES_640=( "ca.key" "server.key" "server.p12" "server.pem" "ldap-client.crt" "ldap-client.key" )
+FILES_640=( "ca.key" "server.key" "server.p12" "server.pem" "google-ldap.crt" "google-ldap.key" )
 for i in "${FILES_640[@]}"
 do
 	if [ -f "/certs/$i" ]; then
@@ -169,6 +216,7 @@ do
 	fi
 done
 
+: '
 echo --------------------------------------------------
 echo 'Unset ENV Vars'
 echo --------------------------------------------------
@@ -178,5 +226,6 @@ unset FR_SHARED_SECRET
 unset EDUROAM_CLIENT_SECRET
 unset EDUROAM_FLR1_SECRET
 unset EDUROAM_FLR2_SECRET
+'
 
 /docker-entrypoint.sh "$@"
