@@ -206,6 +206,12 @@ post-auth {
 	Post-Auth-Type REJECT {
 		attr_filter.access_reject
 
+		# store the reject cause in the session state
+		update outer.session-state {
+			&Module-Failure-Message := &request:Module-Failure-Message
+            &User-Name := &User-Name
+		}
+
 		#
 		#  Record rejects in a cache, as a protection against
 		#  repeated attempts from mis-configured clients.
