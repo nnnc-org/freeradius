@@ -23,13 +23,28 @@ FreeRADIUS configuration variables. Domain is required. Clients are optional.
 | Variable | Default | Description |
 | --- | --- | ---|
 | `DOMAIN` | - | Domain name for FreeRADIUS |
+| 'SETUP_CLIENTS' | 1 | Set to `0` ignore client config |
 | `RAD_CLIENT_*` | - | FreeRADIUS Client Name (replace `*` with number) |
 | `RAD_CLIENT_*_ADDR` | - | CIDR used for by client # |
 | `RAD_CLIENT_*_SECRET` | - | Secret used by client # |
 
+To add eduroam clients, follow the same pattern as the FreeRADIUS clients, except use `EDUROAM_CLIENT_*` instead.
+
+### Proxy Configuration
+
+Proxy configuration is used to proxy requests to eduroam. `DOMAIN` is required.
+
+| Variable | Default | Description |
+| --- | --- | ---|
+| `SETUP_PROXY` | 0 | Set to `1` to run through setup |
+| `EDUROAM_FLR1_IPADDR` | - | Eduroam FLR1 IP Address |
+| `EDUROAM_FLR1_SECRET` | - | Eduroam FLR1 Secret |
+| `EDUROAM_FLR2_IPADDR` | - | Eduroam FLR2 IP Address |
+| `EDUROAM_FLR2_SECRET` | - | Eduroam FLR2 Secret |
+
 ### Active Directory
 
-Technically not for Active Directory, but used for setting up PAM / Kerberos.
+Technically not just for Active Directory, but used for setting up PAM / Kerberos.
 
 | Variable | Default | Description |
 | --- | --- | ---|
@@ -49,19 +64,17 @@ Used to setup LDAP authentication. If `LDAP_SERVER` is set, all fields are requi
 | `LDAP_BIND_PW` | - | Password used to access LDAP server |
 | `LDAP_FILTER` | `(sAMAccountName=%{%{Stripped-User-Name}:-%{User-Name}})` | LDAP User Filter |
 
-### Proxy Configuration
+### SQL
 
-Proxy configuration is used to proxy requests to eduroam. `DOMAIN` is definitely required.
+This SQL setup is very specific for use with the FreeRADIUS Admin project. If you are NOT using FreeRADIUS Admin, you should probably ignore this section. This will allow you to use the same database as FreeRADIUS Admin to perform mac address verification and log authentication attempts.
 
 | Variable | Default | Description |
 | --- | --- | ---|
-| `SETUP_PROXY` | 0 | Set to `1` to run through setup |
-| `EDUROAM_FLR1_IPADDR` | - | Eduroam FLR1 IP Address |
-| `EDUROAM_FLR1_SECRET` | - | Eduroam FLR1 Secret |
-| `EDUROAM_FLR2_IPADDR` | - | Eduroam FLR2 IP Address |
-| `EDUROAM_FLR2_SECRET` | - | Eduroam FLR2 Secret |
-
-To add eduroam clients, follow the same pattern as the FreeRADIUS clients, except use `EDUROAM_CLIENT_*` instead.
+| `POSTGRES_HOST` | - | Postgres Host. If unset, rest will be ignored |
+| `POSTGRES_PORT` | 5432 | Postgres Port |
+| `POSTGRES_DB` | - | Postgres Database |
+| `POSTGRES_USER` | - | Postgres User |
+| `POSTGRES_PASSWORD` | - | Postgres Password |
 
 ### Other
 

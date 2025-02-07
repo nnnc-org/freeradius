@@ -64,46 +64,52 @@ if [ "$AD_DOMAIN" ]; then
 fi
 
 # client setup (optional)
-# loop through all env vars starting with RAD_CLIENT_
-for var in "${!RAD_CLIENT_@}"; do
-    declare -n ref=$var
+if [ "${SETUP_CLIENTS}" == 1 ]; then
+    print_header "Setup FreeRADIUS: clients.conf"
 
-    # only if var does not contain ADDR or SECRET, and ref is not empty
-    if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
-        # check if RAD_CLIENT is already in clients.conf
-        if grep -q "client $ref" /etc/freeradius/clients.conf; then
-            continue
+    cp /templates/clients.conf /etc/freeradius/clients.conf
+
+    # loop through all env vars starting with RAD_CLIENT_
+    for var in "${!RAD_CLIENT_@}"; do
+        declare -n ref=$var
+
+        # only if var does not contain ADDR or SECRET, and ref is not empty
+        if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
+            # check if RAD_CLIENT is already in clients.conf
+            if grep -q "client $ref" /etc/freeradius/clients.conf; then
+                continue
+            fi
+
+            echo "Setup FreeRADIUS: Appending '$ref' to clients.conf"
+            declare -n ref_ADDR=${var}_ADDR
+            declare -n ref_SECRET=${var}_SECRET
+
+            echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
+            echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
+            echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
+            echo "}" >> /etc/freeradius/clients.conf
         fi
+    done
 
-        print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
-        declare -n ref_ADDR=${var}_ADDR
-        declare -n ref_SECRET=${var}_SECRET
+    # eduroam client setup
+    for var in "${!EDUROAM_CLIENT_@}"; do
+        declare -n ref=$var
 
-        echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
-        echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
-        echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
-        echo "}" >> /etc/freeradius/clients.conf
-    fi
-done
+        # only if var does not contain ADDR or SECRET, and ref is not empty
+        if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
+            echo "Setup FreeRADIUS: Appending '$ref' to clients.conf"
+            declare -n ref_ADDR=${var}_ADDR
+            declare -n ref_SECRET=${var}_SECRET
 
-# eduroam client setup
-for var in "${!EDUROAM_CLIENT_@}"; do
-    declare -n ref=$var
+            echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
+            echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
+            echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
+            echo "}" >> /etc/freeradius/clients.conf
+        fi
+    done
+fi
 
-    # only if var does not contain ADDR or SECRET, and ref is not empty
-    if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
-        print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
-        declare -n ref_ADDR=${var}_ADDR
-        declare -n ref_SECRET=${var}_SECRET
-
-        echo -e "\nclient $ref {" >> /etc/freeradius/clients.conf
-        echo "    ipaddr = $ref_ADDR" >> /etc/freeradius/clients.conf
-        echo "    secret = $ref_SECRET" >> /etc/freeradius/clients.conf
-        echo "}" >> /etc/freeradius/clients.conf
-    fi
-done
-
-if [ "${SETUP_PROXY}" == "1" ]; then
+if [ "${SETUP_PROXY}" == 1 ]; then
     print_header "Setup FreeRADIUS: proxy.conf"
 
     [ -z "$DOMAIN" ] && echo "DOMAIN env variable not defined! Exiting..." && exit 1

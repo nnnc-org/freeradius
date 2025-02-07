@@ -36,7 +36,9 @@ RUN sed -i 's/auth = no/auth = yes/g' /etc/raddb/radiusd.conf && \
 
 # Default Environment Variables
 ENV LDAP_FILTER="(sAMAccountName=%{%{Stripped-User-Name}:-%{User-Name}})"
-ENV SETUP_PROXY="0"
+ENV SETUP_PROXY=0
+ENV SETUP_CLIENTS=1
+ENV POSTGRES_PORT=5432
 
 # Copy configurations
 COPY configs/default /etc/raddb/sites-enabled/
