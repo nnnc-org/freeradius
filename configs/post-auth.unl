@@ -1,69 +1,37 @@
 
 post-auth {
 
-    # If local wifi, add vlan
-    if (request:Client-Shortname == "$ENV{CLIENT_NAME}") {
+    # if client-shortname has eduroam in the name, skip the vlan stuff
+    if (request:Client-Shortname !~ /eduroam/) {
         update reply {
             Tunnel-Type := VLAN
             Tunnel-Medium-Type := IEEE-802
+
+            # set default vlan - := means alway override (this prevents you getting a vlan from a misconfigured server)
+            Tunnel-Private-Group-ID := 30
         }
-        # if user came from eduroam, set vlan to guest (unless they are esu2.org)
-        if (&control:Proxy-To-Realm) {
-            if ( "%{User-Name}" =~ /esu2\.org$/ ){
-                update reply {
-                Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
-                }
-            }
-            else {
-                update reply {
-                Tunnel-Private-Group-ID := $ENV{GUEST_VLAN}
-                }
-            }
-        }
-        else {
-            if ("$ENV{LDAP_ENABLE}" == "TRUE") {
-                if (&control:LDAP-UserDN =~ /OU=SysOps/ || &control:LDAP-UserDN =~ /OU=Staff/ ) {
-                    update reply {
-                    Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
-                    }
-                }
-                else {
-                    update reply {
-                    Tunnel-Private-Group-ID := $ENV{STUDENT_VLAN}
-                    }
-                }
-            }
-            else {
-                update reply {
-                    Tunnel-Private-Group-ID := $ENV{STAFF_VLAN}
-                }
+
+        # mac_check is a custom module that checks if the mac address is in the database
+        # upon successful check, it sets Tmp-Integer-0 to 1. Otherwise, it sets it to 0
+        mac_check
+
+        # if mac address is in the database, set vlan to 10
+        if (&Tmp-Integer-0 == 1) {
+            update reply {
+                Tunnel-Private-Group-ID := 10
             }
         }
     }
 
+    remove_reply_message_if_eap
+    sql
 
-    # keep below    
-
-    #if (session-state:User-Name && reply:User-Name && request:User-Name && (reply:User-Name == request:User-Name)) {
-    #    update reply {
-    #        &User-Name !* ANY
-    #    }
-    #}
-    #update {
-    #    &reply: += &session-state:
-    #}
-    #
-    #remove_reply_message_if_eap
-    #linelog
-    #Post-Auth-Type REJECT {
-    #    attr_filter.access_reject
-    #    eap
-    #    remove_reply_message_if_eap
-    #    linelog
-    #}
-    #Post-Auth-Type Challenge {
-    #    linelog
-    #}
+    Post-Auth-Type REJECT {
+        attr_filter.access_reject
+        eap
+        remove_reply_message_if_eap
+        sql
+    }
 
 
 }

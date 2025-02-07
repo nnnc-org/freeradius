@@ -17,8 +17,8 @@ setup_kerberos_pam() {
     print_header "Setting up Kerberos realm: \"${AD_DOMAIN^^}\""
     cat > /etc/krb5.conf << EOL
 [logging]
-    default = FILE:/var/log/krb5.log 
-    kdc = FILE:/var/log/kdc.log 
+    default = FILE:/var/log/krb5.log
+    kdc = FILE:/var/log/kdc.log
     admin_server = FILE:/var/log/kadmind.log
 [libdefaults]
     default_realm = ${AD_DOMAIN^^}
@@ -28,7 +28,7 @@ setup_kerberos_pam() {
     ${AD_DOMAIN^^} = {
         kdc = $(echo ${AD_SERVER,,} | awk '{print $1}')
         admin_server = $(echo ${AD_SERVER,,} | awk '{print $1}')
-        default_domain = ${AD_DOMAIN^^}       
+        default_domain = ${AD_DOMAIN^^}
     }
     ${AD_DOMAIN,,} = {
         kdc = $(echo ${AD_SERVER,,} | awk '{print $1}')
@@ -38,14 +38,14 @@ setup_kerberos_pam() {
     ${AD_WORKGROUP^^} = {
         kdc = $(echo ${AD_SERVER,,} | awk '{print $1}')
         admin_server = $(echo ${AD_SERVER,,} | awk '{print $1}')
-        default_domain = ${AD_DOMAIN^^}       
+        default_domain = ${AD_DOMAIN^^}
     }
-    
+
 [domain_realm]
     .${AD_DOMAIN,,} = ${AD_DOMAIN^^}
     ${AD_DOMAIN,,} = ${AD_DOMAIN^^}
 EOL
-    echo "auth            sufficient      pam_krb5.so minimum_uid=1000" > /etc/pam.d/radiusd 
+    echo "auth            sufficient      pam_krb5.so minimum_uid=1000" > /etc/pam.d/radiusd
     echo "session         required        pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
     echo "account         required        pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
     echo "password        sufficient      pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
@@ -67,9 +67,14 @@ fi
 # loop through all env vars starting with RAD_CLIENT_
 for var in "${!RAD_CLIENT_@}"; do
     declare -n ref=$var
-    
+
     # only if var does not contain ADDR or SECRET, and ref is not empty
     if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
+        # check if RAD_CLIENT is already in clients.conf
+        if grep -q "client $ref" /etc/freeradius/clients.conf; then
+            continue
+        fi
+
         print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
         declare -n ref_ADDR=${var}_ADDR
         declare -n ref_SECRET=${var}_SECRET
@@ -84,7 +89,7 @@ done
 # eduroam client setup
 for var in "${!EDUROAM_CLIENT_@}"; do
     declare -n ref=$var
-    
+
     # only if var does not contain ADDR or SECRET, and ref is not empty
     if [[ ! $var == *_ADDR ]] && [[ ! $var == *_SECRET ]] && [ ! -z "$ref" ]; then
         print_header "Setup FreeRADIUS: Appending '$ref' to clients.conf"
@@ -171,13 +176,21 @@ fi
 # ldap may be needed for either AD or Google
 if [ "$LDAP_SERVER" ]; then
     print_header "Configuring FreeRADIUS: LDAP"
-    
+
     if [ "$LDAP_SERVER" == "ldaps://ldap.google.com:636/" ]; then
         # use envsubst to replace variables in the template
         envsubst '$LDAP_BASE_DN,$LDAP_BIND_DN,$LDAP_BIND_PW'  < /templates/google-ldap/ldap_google > /etc/freeradius/mods-enabled/ldap
     else
         envsubst '$LDAP_SERVER,$LDAP_BASE_DN,$LDAP_BIND_DN,$LDAP_BIND_PW,$LDAP_FILTER' < /templates/ad-ldap/ldap_ad > /etc/freeradius/mods-enabled/ldap
     fi
+fi
+
+if [ "$POSTGRES_HOST" ]; then
+    print_header 'Configuring FreeRADIUS: SQL'
+
+    # use envsubst to replace variables in the template
+    envsubst '$POSTGRES_DB,$POSTGRES_USER,$POSTGRES_PASSWORD,$POSTGRES_HOST,$POSTGRES_PORT' < /templates/sql/sql > /etc/freeradius/mods-enabled/sql
+    cp /templates/sql/mac_check /etc/freeradius/policy.d/mac_check
 fi
 
 

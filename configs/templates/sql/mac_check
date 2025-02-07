@@ -1,0 +1,17 @@
+mac_check {
+    if ("%{sql:SELECT COUNT(*) FROM freeradius_device WHERE mac = '%{Calling-Station-Id}'}" > 0) {
+        update {
+            &Tmp-Integer-0 := 1
+
+            # Store TRUE in the Tmp-String-9 attribute for post-auth logging
+            &Tmp-String-9 := "TRUE"
+        }
+    } else {
+        update {
+            &Tmp-Integer-0 := 0
+
+            # Store FALSE in the Tmp-String-9 attribute for post-auth logging
+            &Tmp-String-9 := "FALSE"
+        }
+    }
+}
