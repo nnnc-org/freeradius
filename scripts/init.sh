@@ -13,6 +13,46 @@ print_header() {
     echo "--------------------------------------------------"
 }
 
+setup_letsencrypt() {
+    print_header "Setting up Let's Encrypt"
+    mkdir -p /acme/data
+    mkdir -p /acme/certs
+    cd /acme.sh
+    ./acme.sh --install -m $LE_EMAIL \
+              --home /acme \
+              --config-home /acme/data \
+              --cert-home /acme/certs \
+              --nocron
+    # now we switch to the letsencrypt ca
+    ./acme.sh --home /acme \
+              --config-home /acme/data \
+              --cert-home /acme/certs \
+              --set-default-ca --server letsencrypt_test
+}
+
+issue_cert() {
+    print_header "Issuing certificate for $CERT_DOMAIN"
+    cd /acme
+    . /acme/acme.sh.env
+    if [ "$LE_DNS" ]; then
+        ./acme.sh --issue -d $CERT_DOMAIN \
+                  --config-home /acme/data \
+                  --home /acme \
+                  --cert-home /acme/certs \
+                  --dns $LE_DNS \
+                  --fullchain-file /etc/raddb/certs/fullchain.pem \
+                  --key-file /etc/raddb/certs/server.key || true
+    else
+        ./acme.sh --issue -d $CERT_DOMAIN \
+                  --config-home /acme/data \
+                  --home /acme \
+                  --cert-home /acme/certs \
+                  --standalone \
+                  --fullchain-file /etc/raddb/certs/fullchain.pem \
+                  --key-file /etc/raddb/certs/server.key || true
+    fi
+}
+
 setup_kerberos_pam() {
     print_header "Setting up Kerberos realm: \"${AD_DOMAIN^^}\""
     cat > /etc/krb5.conf << EOL
@@ -50,6 +90,12 @@ EOL
     echo "account         required        pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
     echo "password        sufficient      pam_krb5.so minimum_uid=1000" >> /etc/pam.d/radiusd
 }
+
+if [ "$LE_EMAIL" ] && [ "$CERT_DOMAIN" ]; then
+    setup_letsencrypt
+    issue_cert
+    #install_cert
+fi
 
 # if ad_domain is set, then setup kerberos
 if [ "$AD_DOMAIN" ]; then
@@ -214,6 +260,11 @@ echo --------------------------------------------------
 echo 'Configuring FreeRADIUS: certificates'
 echo --------------------------------------------------
 
+FREERADIUS_FULLCHAIN="/etc/raddb/certs/fullchain.pem"
+FREERADIUS_KEY="/etc/raddb/certs/server.key"
+chown -R root:freerad $FREERADIUS_FULLCHAIN $FREERADIUS_KEY
+chmod 640 $FREERADIUS_FULLCHAIN $FREERADIUS_KEY
+
 # Handle the rest of the certificates
 # First the array of files which need 640 permissions
 FILES_640=( "ca.key" "server.key" "server.p12" "server.pem" "google-ldap.crt" "google-ldap.key" )
@@ -221,7 +272,7 @@ for i in "${FILES_640[@]}"
 do
 	if [ -f "/certs/$i" ]; then
 	    cp /certs/$i /etc/raddb/certs/$i
-	    chmod 640 /etc/raddb/certs/$i
+		chmod 640 /etc/raddb/certs/$i
 	fi
 done
 
@@ -235,16 +286,5 @@ do
 	fi
 done
 
-: '
-echo --------------------------------------------------
-echo 'Unset ENV Vars'
-echo --------------------------------------------------
-
-unset AD_PASSWORD
-unset FR_SHARED_SECRET
-unset EDUROAM_CLIENT_SECRET
-unset EDUROAM_FLR1_SECRET
-unset EDUROAM_FLR2_SECRET
-'
-
-/docker-entrypoint.sh "$@"
+#/docker-entrypoint.sh "$@"
+supervisord -c /etc/supervisor/supervisord.conf
