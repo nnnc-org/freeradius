@@ -63,5 +63,3 @@ RUN chmod +x /usr/local/bin/init.sh && \
     chmod +x /usr/local/bin/cert-renew.sh
 
 ENTRYPOINT ["/usr/local/bin/init.sh"]
-
-CMD ["freeradius"]
