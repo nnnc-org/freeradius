@@ -15,6 +15,8 @@ print_header() {
 
 setup_letsencrypt() {
     print_header "Setting up Let's Encrypt"
+
+    # install acme.sh
     mkdir -p /acme/data
     mkdir -p /acme/certs
     cd /acme.sh
@@ -27,7 +29,7 @@ setup_letsencrypt() {
     ./acme.sh --home /acme \
               --config-home /acme/data \
               --cert-home /acme/certs \
-              --set-default-ca --server letsencrypt_test
+              --set-default-ca --server letsencrypt
 }
 
 issue_cert() {
