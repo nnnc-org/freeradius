@@ -1,4 +1,4 @@
-ARG FREERADIUS_VERSION=3.2.6
+ARG FREERADIUS_VERSION=3.2.7
 
 FROM freeradius/freeradius-server:${FREERADIUS_VERSION} AS build
 
